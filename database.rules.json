@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "users": {
+      ".indexOn": ["joinedAt"],
+      "$uid": {
+        ".read": "auth != null || true",
+        ".write": "auth != null || true"
+      }
+    },
+    "deposits": {
+      ".indexOn": ["status", "timestamp", "user", "orderId"],
+      "$id": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "withdrawals": {
+      ".indexOn": ["status", "timestamp", "user"],
+      "$id": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "plans": {
+      ".indexOn": ["order", "enabled"],
+      "$id": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "settings": {
+      "paymentMethods": {
+        ".read": true,
+        ".write": true
+      },
+      "config": {
+        ".read": true,
+        ".write": true
+      },
+      "telegram": {
+        ".read": true,
+        ".write": true
+      }
+    },
+    "giftCodes": {
+      ".indexOn": ["status", "createdAt"],
+      "$code": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
