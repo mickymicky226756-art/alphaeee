@@ -165,22 +165,31 @@ export function TransactionsSection({
         // Approve a deposit → credit the user's balance.
         await store.adjustUserBalance(uid, amt);
         const u = await store.getUser(uid);
+        // Referral commission is paid ONLY on the user's first
+        // approved deposit. Subsequent deposits (2nd, 3rd, …) credit
+        // the user's balance normally but never trigger the
+        // referrer payout — otherwise referrers would be paid over
+        // and over for the same referee. The `firstDepositDone`
+        // flag is the single source of truth: it's flipped to `true`
+        // here, the very first time we approve a deposit for this
+        // user, and stays `true` for life.
         if (u && !u.firstDepositDone) {
           await store.upsertUser(uid, { firstDepositDone: true });
-        }
-        // Distribute the 3-level referral commission (20% / 2% / 1%).
-        // If the chain is short (e.g. the depositor was referred but
-        // their referrer has no own referrer) only the present levels
-        // are credited. We capture the summary for the success toast.
-        const payouts = await store.distributeReferralCommission(
-          uid,
-          u?.phone || '',
-          amt,
-        );
-        if (payouts.length > 0) {
-          referralSummary = payouts
-            .map((p) => `L${p.level} ${p.amount.toFixed(2)}`)
-            .join(', ');
+          // Distribute the 3-level referral commission
+          // (20% / 2% / 1%). If the chain is short (e.g. the
+          // depositor was referred but their referrer has no own
+          // referrer) only the present levels are credited. We
+          // capture the summary for the success toast.
+          const payouts = await store.distributeReferralCommission(
+            uid,
+            u?.phone || '',
+            amt,
+          );
+          if (payouts.length > 0) {
+            referralSummary = payouts
+              .map((p) => `L${p.level} ${p.amount.toFixed(2)}`)
+              .join(', ');
+          }
         }
       } else {
         // Approve a withdrawal → the user side already deducted the

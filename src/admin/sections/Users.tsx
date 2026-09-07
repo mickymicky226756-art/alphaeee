@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getDataStore } from '../../services/dataStore';
 import type { UserRecord } from '../../types/admin';
 import { UserEditModal } from '../components/UserEditModal';
+import { GivePlanModal } from '../components/GivePlanModal';
 import { useConfirm } from '../components/ConfirmModal';
 import { useAdminToast } from '../components/Toast';
 
@@ -28,6 +29,7 @@ export function UsersSection({ active }: { active: boolean }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [editing, setEditing] = useState<UserRecord | null>(null);
+  const [givingPlan, setGivingPlan] = useState<UserRecord | null>(null);
   const toast = useAdminToast();
   const { showConfirm, confirmNode } = useConfirm();
 
@@ -224,6 +226,15 @@ export function UsersSection({ active }: { active: boolean }) {
                               <i className="fa-solid fa-pen" />
                             </button>
                             <button
+                              className="admin-btn-icon"
+                              title="Assign investment plan"
+                              onClick={() => setGivingPlan(u)}
+                              style={{ marginLeft: 4 }}
+                              disabled={isBanned}
+                            >
+                              <i className="fa-solid fa-gift" />
+                            </button>
+                            <button
                               className={`admin-btn-icon ${isBanned ? '' : 'danger'}`}
                               title={isBanned ? 'Unban' : 'Ban'}
                               onClick={() => handleQuickBan(u)}
@@ -250,6 +261,18 @@ export function UsersSection({ active }: { active: boolean }) {
           onSaved={(updated) => {
             setUsers((cur) => cur.map((u) => (u.uid === updated.uid ? { ...u, ...updated } : u)));
             setEditing(null);
+          }}
+        />
+      )}
+      {givingPlan && (
+        <GivePlanModal
+          user={givingPlan}
+          onClose={() => setGivingPlan(null)}
+          onAssigned={() => {
+            // The data store's onUsersChange subscription will
+            // refresh the table automatically; this callback is
+            // just a hook in case the modal needs to do extra
+            // bookkeeping in the future.
           }}
         />
       )}
