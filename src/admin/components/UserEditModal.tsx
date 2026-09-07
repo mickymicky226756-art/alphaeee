@@ -49,6 +49,13 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
 
   const [depositCount, setDepositCount] = useState(0);
   const [withdrawCount, setWithdrawCount] = useState(0);
+  // Resolved referrer info — populated from the data store so the
+  // admin can see *whose phone* this user was referred by, not just
+  // whatever raw value is sitting in `referredBy` (which can be a
+  // phone, an invite code, or a uid depending on how the user was
+  // created).
+  const [referrerPhone, setReferrerPhone] = useState<string>('');
+  const [referrerName, setReferrerName] = useState<string>('');
 
   useEffect(() => {
     let alive = true;
@@ -62,10 +69,75 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
       setWithdrawCount(wds.filter((w) => w.user === user.uid).length);
     };
     load();
+
+    // Resolve `referredBy` into an actual phone number + display
+    // name so the admin can see who referred this user, not just
+    // a raw code/uid. The stored value can be a phone, an invite
+    // code (refCode/inviteCode), or a uid — we accept all three.
+    // The user-facing app writes the inviter under `referrer` while
+    // the admin panel historically wrote `referredBy`, so we read
+    // both so existing users (with either field populated) resolve
+    // correctly without any data migration.
+    const resolveReferrer = async () => {
+      const userRecord = user as UserRecord & { referrer?: string };
+      const raw = (user.referredBy || userRecord.referrer || '').trim();
+      if (!raw || raw.toLowerCase() === 'admin') {
+        if (alive) {
+          setReferrerPhone('');
+          setReferrerName('');
+        }
+        return;
+      }
+      try {
+        // Phone-shaped values (start with + or are all digits and
+        // long enough) can be used as-is without a lookup.
+        const looksLikePhone =
+          raw.startsWith('+') || (/^\d{6,}$/.test(raw) && !raw.includes('@'));
+        if (looksLikePhone) {
+          if (!alive) return;
+          setReferrerPhone(raw);
+          setReferrerName('');
+          return;
+        }
+        // Otherwise it's a code or uid — look it up in the user
+        // list. We try direct uid first, then match by code so the
+        // admin sees the actual inviter even if the field holds a
+        // referral code rather than a uid.
+        const direct = await store.getUser(raw);
+        if (direct) {
+          if (!alive) return;
+          setReferrerPhone(direct.phone || direct.uid);
+          setReferrerName(direct.name || '');
+          return;
+        }
+        const all = await store.listUsers();
+        if (!alive) return;
+        const upper = raw.toUpperCase();
+        const match = all.find(
+          (u) =>
+            (typeof u.refCode === 'string' && u.refCode.toUpperCase() === upper) ||
+            (typeof u.inviteCode === 'string' && u.inviteCode.toUpperCase() === upper) ||
+            u.uid === raw,
+        );
+        if (match) {
+          setReferrerPhone(match.phone || match.uid);
+          setReferrerName(match.name || '');
+        } else {
+          setReferrerPhone(raw);
+          setReferrerName('');
+        }
+      } catch {
+        if (!alive) return;
+        setReferrerPhone(raw);
+        setReferrerName('');
+      }
+    };
+    resolveReferrer();
+
     return () => {
       alive = false;
     };
-  }, [store, user.uid]);
+  }, [store, user.uid, user.referredBy]);
 
   const initial = (name || phone || 'U').charAt(0).toUpperCase();
   const planCount = user.plans ? Object.keys(user.plans).length : 0;
@@ -187,28 +259,6 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
     await store.deleteUser(user.uid);
     toast('User deleted', 'success');
     onClose();
-  };
-
-  const copyPwd = async () => {
-    if (!password) return toast('No password to copy', 'warning');
-    try {
-      await navigator.clipboard.writeText(password);
-      toast('Password copied', 'success');
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = password;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand('copy');
-        toast('Password copied', 'success');
-      } catch {
-        toast('Copy failed', 'error');
-      }
-      document.body.removeChild(ta);
-    }
   };
 
   return (
@@ -337,17 +387,30 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
 
             <div className="admin-form-row">
               <div className="admin-form-group">
-                <label className="ad-label">Password</label>
+                <label className="ad-label">Current Password</label>
                 <div className="admin-pwd-wrap">
                   <input
                     className="admin-form-input"
                     type={showPwd ? 'text' : 'password'}
-                    value={password}
-                    placeholder={user.password ? `Current: ${user.password}` : '(no password set)'}
-                    onChange={(e) => setPassword(e.target.value)}
+                    value={user.password || ''}
+                    readOnly
+                    placeholder="(no password set)"
+                    style={{ background: '#f8fafc', fontWeight: 700, letterSpacing: '0.5px' }}
                   />
-                  {password && (
-                    <button type="button" className="ad-copy" onClick={copyPwd} title="Copy password">
+                  {user.password && (
+                    <button
+                      type="button"
+                      className="ad-copy"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(user.password || '');
+                          toast('Password copied', 'success');
+                        } catch {
+                          toast('Copy failed', 'error');
+                        }
+                      }}
+                      title="Copy password"
+                    >
                       <i className="fa-regular fa-copy" />
                     </button>
                   )}
@@ -360,6 +423,18 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
                     <i className={`fa-solid ${showPwd ? 'fa-eye-slash' : 'fa-eye'}`} />
                   </button>
                 </div>
+                <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: 4, display: 'block' }}>
+                  Set a new password below to replace it.
+                </small>
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    className="admin-form-input"
+                    type="password"
+                    value={password}
+                    placeholder="New password (leave blank to keep)"
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="admin-form-group">
                 <label className="ad-label">Ref Code</label>
@@ -369,13 +444,46 @@ export function UserEditModal({ user, onClose, onSaved }: UserEditModalProps) {
 
             <div className="admin-form-row">
               <div className="admin-form-group">
-                <label className="ad-label">Referred By</label>
+                <label className="ad-label">Referred By (phone)</label>
                 <input
                   className="admin-form-input"
-                  value={referredBy}
-                  onChange={(e) => setReferredBy(e.target.value)}
-                  placeholder="inviter phone or code"
+                  value={referrerPhone || '—'}
+                  readOnly
+                  placeholder="(no referrer / signed up directly)"
+                  style={{
+                    background: '#f8fafc',
+                    fontWeight: 700,
+                    color: referrerPhone ? '#0f172a' : '#94a3b8',
+                  }}
                 />
+                {referrerName && (
+                  <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: 4, display: 'block' }}>
+                    Name: {referrerName}
+                  </small>
+                )}
+                <small style={{ color: '#64748b', fontSize: '0.72rem', marginTop: 4, display: 'block' }}>
+                  Resolved from{' '}
+                  <code>
+                    {user.referredBy
+                      ? 'referredBy'
+                      : (user as UserRecord & { referrer?: string }).referrer
+                      ? 'referrer'
+                      : '—'}
+                  </code>{' '}
+                  (
+                  {user.referredBy ||
+                    (user as UserRecord & { referrer?: string }).referrer ||
+                    '—'}
+                  ).
+                </small>
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    className="admin-form-input"
+                    value={referredBy}
+                    onChange={(e) => setReferredBy(e.target.value)}
+                    placeholder="inviter phone or code (editable)"
+                  />
+                </div>
               </div>
               <div className="admin-form-group" />
             </div>

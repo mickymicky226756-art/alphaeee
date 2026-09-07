@@ -95,14 +95,23 @@ export interface DataStoreAPI {
   // ---- banks ---------------------------------------------------------
   listBanks(): Promise<BankRecord[]>;
   addBank(input: Omit<BankRecord, 'id'>): Promise<string>;
+  updateBank(id: string, patch: Partial<Omit<BankRecord, 'id'>>): Promise<void>;
   deleteBank(id: string): Promise<void>;
   onBanksChange(cb: (rows: BankRecord[]) => void): Unsubscribe;
 
   // ---- gift codes ----------------------------------------------------
   listGiftCodes(): Promise<GiftCodeRecord[]>;
-  createGiftCode(input: { key: string; amount: number; expiresAt: number | null }): Promise<void>;
+  createGiftCode(input: {
+    key: string;
+    amount: number;
+    maxUses: number;
+    expiresAt: number | null;
+  }): Promise<void>;
   deleteGiftCode(code: string): Promise<void>;
-  redeemGiftCode(code: string, uid: string): Promise<{ ok: boolean; amount?: number; reason?: string }>;
+  redeemGiftCode(
+    code: string,
+    uid: string,
+  ): Promise<{ ok: boolean; amount?: number; reason?: string }>;
   onGiftCodesChange(cb: (rows: GiftCodeRecord[]) => void): Unsubscribe;
 
   // ---- settings ------------------------------------------------------

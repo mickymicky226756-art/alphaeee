@@ -91,11 +91,30 @@ export interface BankRecord {
 /** A gift code managed by the admin. */
 export interface GiftCodeRecord {
   key: string;            // the code itself, uppercase
+  /** Fixed reward (Birr) credited to a user's balance when they redeem. */
   amount: number;
+  /**
+   * How many distinct users may redeem this code. The admin sets
+   * this at creation time (e.g. 100 for a promo). Defaults to 1 for
+   * single-use codes so legacy records still work.
+   */
+  maxUses?: number;
   status: 'active' | 'used' | 'expired';
   createdAt: number;
   expiresAt: number | null;
-  usedBy?: string;        // uid that redeemed it
+  /**
+   * List of uids that have already redeemed the code. We track each
+   * uid so a single user can't claim the same multi-use code twice.
+   * Legacy single-use codes may have `usedBy` as a string; new codes
+   * always use this array.
+   */
+  usedByList?: string[];
+  /**
+   * @deprecated kept for backward compatibility with single-use
+   * records created before multi-use was added. New code reads
+   * should always use `usedByList`.
+   */
+  usedBy?: string;
   usedAt?: number;
 }
 

@@ -575,6 +575,10 @@ export class FirebaseDataStore implements DataStoreAPI {
     const ref = await fPush(r(db, 'settings/paymentMethods'), { ...input, enabled: true });
     return ref.key || `bank_${Date.now()}`;
   }
+  async updateBank(id: string, patch: Partial<Omit<BankRecord, 'id'>>): Promise<void> {
+    if (!db) return;
+    await fUpdate(r(db, `settings/paymentMethods/${id}`), patch as Record<string, unknown>);
+  }
   async deleteBank(id: string): Promise<void> {
     if (!db) return;
     await fSet(r(db, `settings/paymentMethods/${id}`), null);
@@ -597,13 +601,20 @@ export class FirebaseDataStore implements DataStoreAPI {
       .map(([k, v]) => ({ ...v, key: k }))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
-  async createGiftCode(input: { key: string; amount: number; expiresAt: number | null }): Promise<void> {
+  async createGiftCode(input: {
+    key: string;
+    amount: number;
+    maxUses: number;
+    expiresAt: number | null;
+  }): Promise<void> {
     if (!db) return;
     await fSet(r(db, `giftCodes/${input.key}`), {
       amount: input.amount,
+      maxUses: input.maxUses,
       status: 'active',
       createdAt: Date.now(),
       expiresAt: input.expiresAt,
+      usedByList: [],
     });
   }
   async deleteGiftCode(code: string): Promise<void> {
@@ -620,13 +631,38 @@ export class FirebaseDataStore implements DataStoreAPI {
     if (entry.expiresAt && entry.expiresAt < Date.now()) {
       return { ok: false as const, reason: 'Code expired' };
     }
+    // Multi-use codes: each user can claim once. `usedByList` is the
+    // canonical list of uids that have already redeemed; if this uid
+    // is in it, the same user is trying to claim twice.
+    const usedList = Array.isArray(entry.usedByList) ? entry.usedByList : [];
+    if (usedList.includes(uid)) {
+      return { ok: false as const, reason: 'You already used this code' };
+    }
+    const max = typeof entry.maxUses === 'number' && entry.maxUses > 0 ? entry.maxUses : 1;
+    if (usedList.length >= max) {
+      return { ok: false as const, reason: 'Code already fully claimed' };
+    }
     let claimed = false;
     await runTransaction(codeRef, (cur) => {
       if (!cur) return cur;
       const c = cur as GiftCodeRecord;
       if (c.status !== 'active') return undefined;
+      const curList = Array.isArray(c.usedByList) ? c.usedByList : [];
+      if (curList.includes(uid)) return undefined;
+      const curMax = typeof c.maxUses === 'number' && c.maxUses > 0 ? c.maxUses : 1;
+      if (curList.length >= curMax) return undefined;
+      const nextList = [...curList, uid];
       claimed = true;
-      return { ...c, status: 'used', usedBy: uid, usedAt: Date.now() };
+      return {
+        ...c,
+        status: nextList.length >= curMax ? 'used' : 'active',
+        usedByList: nextList,
+        // Keep the legacy `usedBy` field set to the most recent
+        // redeemer so anything else that reads it (older admin
+        // versions) still has something meaningful to display.
+        usedBy: uid,
+        usedAt: Date.now(),
+      };
     });
     if (!claimed) return { ok: false as const, reason: 'Code already used' };
     return { ok: true as const, amount: entry.amount };

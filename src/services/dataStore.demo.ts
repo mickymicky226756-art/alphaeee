@@ -516,6 +516,14 @@ export class DemoDataStore implements DataStoreAPI {
     this.bus.emit('banks', await this.listBanks());
     return id;
   }
+  async updateBank(id: string, patch: Partial<Omit<BankRecord, 'id'>>): Promise<void> {
+    const all = readLS<Record<string, BankRecord>>(LS_KEYS.banks, {});
+    const cur = all[id];
+    if (!cur) return;
+    all[id] = { ...cur, ...patch, id };
+    writeLS(LS_KEYS.banks, all);
+    this.bus.emit('banks', await this.listBanks());
+  }
   async deleteBank(id: string): Promise<void> {
     const all = readLS<Record<string, BankRecord>>(LS_KEYS.banks, {});
     delete all[id];
@@ -533,14 +541,21 @@ export class DemoDataStore implements DataStoreAPI {
       .map(([k, v]) => ({ ...v, key: k }))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
-  async createGiftCode(input: { key: string; amount: number; expiresAt: number | null }): Promise<void> {
+  async createGiftCode(input: {
+    key: string;
+    amount: number;
+    maxUses: number;
+    expiresAt: number | null;
+  }): Promise<void> {
     const all = readLS<Record<string, GiftCodeRecord>>(LS_KEYS.giftCodes, {});
     all[input.key] = {
       key: input.key,
       amount: input.amount,
+      maxUses: input.maxUses,
       status: 'active',
       createdAt: Date.now(),
       expiresAt: input.expiresAt,
+      usedByList: [],
     };
     writeLS(LS_KEYS.giftCodes, all);
     this.bus.emit('giftCodes', await this.listGiftCodes());
@@ -561,11 +576,23 @@ export class DemoDataStore implements DataStoreAPI {
     if (entry.expiresAt && entry.expiresAt < Date.now()) {
       return { ok: false, reason: 'Code expired' };
     }
-    if (this.giftRedeemLog[code]) return { ok: false, reason: 'Code already used' };
-    all[code] = { ...entry, status: 'used', usedBy: uid, usedAt: Date.now() };
-    this.giftRedeemLog[code] = uid;
+    const usedList = Array.isArray(entry.usedByList) ? entry.usedByList : [];
+    if (usedList.includes(uid)) {
+      return { ok: false, reason: 'You already used this code' };
+    }
+    const max = typeof entry.maxUses === 'number' && entry.maxUses > 0 ? entry.maxUses : 1;
+    if (usedList.length >= max) {
+      return { ok: false, reason: 'Code already fully claimed' };
+    }
+    const nextList = [...usedList, uid];
+    all[code] = {
+      ...entry,
+      status: nextList.length >= max ? 'used' : 'active',
+      usedByList: nextList,
+      usedBy: uid,
+      usedAt: Date.now(),
+    };
     writeLS(LS_KEYS.giftCodes, all);
-    writeLS(LS_KEYS.giftRedeemLog, this.giftRedeemLog);
     this.bus.emit('giftCodes', await this.listGiftCodes());
     return { ok: true, amount: entry.amount };
   }

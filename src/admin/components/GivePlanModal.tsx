@@ -114,7 +114,7 @@ export function GivePlanModal({ user, onClose, onAssigned }: GivePlanModalProps)
   };
 
   return (
-    <div className="admin-modal-overlay" onClick={busy ? undefined : onClose}>
+    <div className="admin-modal-backdrop show" onClick={busy ? undefined : onClose}>
       <div
         className="admin-modal"
         onClick={(e) => e.stopPropagation()}
@@ -122,7 +122,7 @@ export function GivePlanModal({ user, onClose, onAssigned }: GivePlanModalProps)
         aria-modal="true"
         aria-labelledby="admin-give-plan-title"
       >
-        <div className="admin-modal-head">
+        <div className="admin-modal-header">
           <h2 id="admin-give-plan-title">
             <i className="fa-solid fa-gift admin-text-info" /> Assign Plan to User
           </h2>
@@ -291,7 +291,7 @@ export function GivePlanModal({ user, onClose, onAssigned }: GivePlanModalProps)
           )}
         </div>
 
-        <div className="admin-modal-foot">
+        <div className="admin-modal-footer">
           <button className="admin-btn btn-secondary" onClick={onClose} disabled={busy}>
             Cancel
           </button>
